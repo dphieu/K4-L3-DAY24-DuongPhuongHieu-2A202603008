@@ -30,10 +30,59 @@ set ở tests/vn_pii_testset.jsonl):
 """
 from __future__ import annotations
 
+import re
+
+
+_EMAIL_RE = re.compile(
+    r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])",
+    re.IGNORECASE,
+)
+_BANK_ACCOUNT_RE = re.compile(
+    r"(?:\bSTK\b|số\s+tài\s+khoản|so\s+tai\s+khoan)"
+    r"\s*(?:[:#-]|là|la)?\s*(?P<value>(?<!\d)\d(?:[ -]?\d){7,15}(?!\d))",
+    re.IGNORECASE,
+)
+_PHONE_RE = re.compile(r"(?<!\d)0(?:[ -]?\d){9,10}(?!\d)")
+_CCCD_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+
+
+def _overlaps(start: int, end: int, accepted: list[dict]) -> bool:
+    return any(start < item["end"] and item["start"] < end for item in accepted)
+
 
 def detect(text: str) -> list[dict]:
-    raise NotImplementedError("BƯỚC 3a: implement PII detection")
+    """Return non-overlapping PII spans into the original *text*.
+
+    Labelled bank accounts take precedence over the shape-only CCCD/phone
+    recognizers.  This matters for 10- or 12-digit account numbers, whose
+    shapes would otherwise produce a second, incorrect entity.
+    """
+    candidates: list[tuple[int, int, int, str]] = []
+
+    for match in _EMAIL_RE.finditer(text):
+        candidates.append((0, match.start(), match.end(), "EMAIL"))
+    for match in _BANK_ACCOUNT_RE.finditer(text):
+        candidates.append(
+            (0, match.start("value"), match.end("value"), "VN_BANK_ACCOUNT")
+        )
+    for match in _PHONE_RE.finditer(text):
+        candidates.append((1, match.start(), match.end(), "VN_PHONE"))
+    for match in _CCCD_RE.finditer(text):
+        candidates.append((2, match.start(), match.end(), "VN_CCCD"))
+
+    accepted: list[dict] = []
+    for _priority, start, end, entity_type in sorted(
+        candidates, key=lambda item: (item[0], item[1], -(item[2] - item[1]))
+    ):
+        if not _overlaps(start, end, accepted):
+            accepted.append({"type": entity_type, "start": start, "end": end})
+
+    return sorted(accepted, key=lambda item: (item["start"], item["end"]))
 
 
 def redact(text: str) -> str:
-    raise NotImplementedError("BƯỚC 3a: implement PII redaction")
+    redacted = text
+    for entity in sorted(detect(text), key=lambda item: item["start"], reverse=True):
+        replacement = f"[REDACTED_{entity['type']}]"
+        redacted = redacted[: entity["start"]] + replacement + redacted[entity["end"] :]
+    return redacted

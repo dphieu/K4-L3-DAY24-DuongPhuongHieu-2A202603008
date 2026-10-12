@@ -34,7 +34,14 @@ không phải xác thực người dùng production.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+
+_PRINCIPALS_PATH = Path(__file__).resolve().parent.parent / "data" / "principals.json"
+_CLASSIFICATIONS = frozenset({"public", "internal", "restricted"})
 
 
 @dataclass(frozen=True)
@@ -52,4 +59,63 @@ class PolicyContext:
 
 
 def check(context: PolicyContext) -> tuple[bool, str]:
-    raise NotImplementedError("BƯỚC 3b: implement policy check")
+    """Evaluate the mandatory data rule and the simulated OBO grant."""
+    if context.data_classification not in _CLASSIFICATIONS:
+        return False, f"unknown data classification: {context.data_classification!r}"
+
+    # This invariant is deliberately evaluated before OBO fields: even a
+    # fully-authorized principal may not combine restricted data and egress.
+    if context.data_classification == "restricted" and context.egress_enabled:
+        return False, "restricted data cannot be used by an egress-enabled tool call"
+
+    if context.delegation_depth < 0:
+        return False, "delegation_depth cannot be negative"
+    if not context.agent_owner.strip():
+        return False, "agent_owner is required"
+
+    try:
+        principals = json.loads(_PRINCIPALS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, f"principal registry unavailable: {type(exc).__name__}"
+
+    principal = principals.get(context.principal_id)
+    if principal is None:
+        return False, f"unknown principal: {context.principal_id!r}"
+    if not context.requested_tool:
+        return False, "requested_tool is required"
+
+    allowed_tools = set(principal.get("allowed_tools", ()))
+    if context.requested_tool not in allowed_tools:
+        return False, (
+            f"principal {context.principal_id!r} is not allowed to use "
+            f"{context.requested_tool!r}"
+        )
+    if context.requested_tool not in set(context.agent_scopes):
+        return False, f"agent scope does not include {context.requested_tool!r}"
+    if context.delegation_depth > 0 and context.requested_tool not in set(context.parent_scopes):
+        return False, f"parent scope does not include {context.requested_tool!r}"
+
+    purposes = set(principal.get("purposes", ()))
+    if context.request_purpose not in purposes:
+        return False, (
+            f"purpose {context.request_purpose!r} is not allowed for principal "
+            f"{context.principal_id!r}"
+        )
+
+    if not context.expires_at:
+        return False, "expires_at is required"
+    try:
+        expires_at = datetime.fromisoformat(context.expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False, f"expires_at is not valid ISO-8601 UTC: {context.expires_at!r}"
+    if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+        return False, "expires_at must include a UTC offset"
+    if expires_at.utcoffset() != timedelta(0):
+        return False, "expires_at must be expressed in UTC"
+    if expires_at.astimezone(timezone.utc) <= datetime.now(timezone.utc):
+        return False, f"authorization expired at {context.expires_at}"
+
+    return True, (
+        f"principal {context.principal_id!r} may use {context.requested_tool!r} "
+        f"for purpose {context.request_purpose!r} within effective scopes"
+    )

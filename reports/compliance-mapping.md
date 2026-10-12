@@ -1,10 +1,12 @@
-# Compliance mapping — điền trong checkpoint 5
+# Compliance mapping — checkpoint 5
 
-| Nguồn / yêu cầu | Control đã làm | Evidence file:dòng | Giới hạn |
+| Nguồn / chủ đề | Control đã làm | Bằng chứng `file:dòng` thật | Giới hạn |
 |---|---|---|---|
-| Luật 91/2025/QH15 | | | |
-| NĐ 356/2025/NĐ-CP | | | |
-| Luật AI 134/2025/QH15 | | | |
-| OWASP ASI01, ASI03, ASI04 | | | |
+| [Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15 — nguồn Chính phủ](https://vanban.chinhphu.vn/?docid=214590&pageid=27160) | Nhận diện/che PII; phân loại dữ liệu; deny `restricted + egress`; không ghi PII thô vào ledger. | `agent/pii.py:53`, `agent/pii.py:83`; `agent/policy.py:61-69`; `agent/runner.py:92-116` | Chỉ mapping theo chủ đề bảo vệ dữ liệu. Điều khoản cụ thể: **chưa xác minh**; regex và fixture synthetic không chứng minh tuân thủ. |
+| [Nghị định 356/2025/NĐ-CP — nguồn Chính phủ](https://chinhphu.vn/?docid=216387&pageid=27160) | Giới hạn mục đích/quyền ở PEP; tách untrusted ticket khỏi private store; lưu vết allow/deny bằng hash chain. | `agent/policy.py:61-121`; `agent/runner.py:139-226`; `agent/ledger.py:65-109` | Điều khoản và nghĩa vụ hồ sơ thực tế: **chưa xác minh**. Ledger lab không thay thế quy trình quản trị, lưu giữ hay đánh giá tác động theo pháp luật. |
+| [Luật Trí tuệ nhân tạo 134/2025/QH15 — nguồn Chính phủ](https://vanban.chinhphu.vn/?docid=216334&pageid=27160) | Kiểm soát hành động agent tại tool boundary, danh tính OBO, TTL/scope và log giải thích quyết định. | `agent/policy.py:71-121`; `agent/runner.py:92-116`; `reports/verification.md:28-35` | Chỉ là đối chiếu kỹ thuật quản trị rủi ro AI; điều khoản cụ thể: **chưa xác minh**. Mock không phải hệ thống AI production. |
+| [OWASP ASI01 — Agent Goal Hijack](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/) | Run A coi ticket là untrusted, redact PII và chỉ truyền ticket ID lấy từ tên file; customer ID do attacker viết không đi sang Run B. | `agent/runner.py:163-203`; `reports/verification.md:37-43`; `injection-corpus.md:47-69` | Mock chỉ nhận một tập marker cố định; containment kiến trúc giảm tác động nhưng không chứng minh chống mọi prompt injection. |
+| [OWASP ASI03 — Identity & Privilege Abuse](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/) | Quyền hiệu lực là giao của principal/tool scope/parent scope; kiểm purpose và expiry; `support_l1` bị deny, `dpo` giữ chức năng hợp lệ. | `agent/policy.py:71-121`; `agent/runner.py:185-226`; `reports/verification.md:28-33` | `data/principals.json` và `--as` chỉ mô phỏng authorization, không xác thực người dùng thật. |
+| [OWASP ASI04 — Agentic Supply Chain Vulnerabilities](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/) | Pin Gitleaks hook, khóa dependency kèm hash, quét lịch sử và cây file hiện tại, có playbook rotate khi secret thật bị lộ. | `.pre-commit-config.yaml:1-6`; `requirements.lock:1`; `reports/secrets-incident.md:3-23` | Hash/pin/scanner không chứng minh package an toàn tuyệt đối và không thay thế SBOM, ký artifact, review nguồn hay rotate credential. |
 
-Chỉ ghi điều khoản cụ thể khi đã đối chiếu văn bản gốc. Mô phỏng kỹ thuật không tự chứng minh tuân thủ pháp luật.
+Bảng này là mapping bằng chứng kỹ thuật của lab, không phải chứng nhận tuân thủ hay ý kiến pháp lý.
